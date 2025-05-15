@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Online Voting System - iVote
 
 Online Voting System is a project using Django framework to build a web application that implements voting process online.
@@ -38,3 +39,7 @@ python manage.py runserver
 ```
 
 Open  ```localhost:8000 ``` in your browser.
+=======
+# iVote
+A Full Stack web application using Django 
+>>>>>>> 61af902cad9dd0f298a21366b723d7ceb0a86df6
