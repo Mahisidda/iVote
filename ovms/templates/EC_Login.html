@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+
+{% load static %}
+{% load crispy_forms_tags %}
+
+
+{% block main_content %}
+
+<!DOCTYPE html>
+<html>
+<head>
+	<title>EC_Login</title>
+	<style type="text/css">
+		form {
+			align: center;
+		}
+		.login-page {
+			width: 360px;
+			padding: 10% 0 0;
+			margin: auto;
+		}
+		.ec_login_form {
+			position: relative;
+			z-index: 1;
+			background: #ffffff;
+			max-width: 360px;
+			padding: 45px;
+			text-align: center;
+		}
+	</style>
+</head>
+<body>
+	<div class="login-page">
+	    <form class="ec_login_form" method='POST'> {% csrf_token %}
+				  <h1 class="h3 mb-3 font-weight-normal">Please sign in</h1>
+				  {{ ec_login_form|crispy }}
+			<button class="btn btn-lg btn-primary btn-block" type="submit">Log in</button>
+            {% if messages %}
+            <ul class="messages" style="list-style-type: none; padding-left: 0; margin-top: 10px;">
+                {% for message in messages %}
+                {# Apply Bootstrap alert classes based on message tags for better styling #}
+                {% if message.tags == 'error' %}
+                <li class="alert alert-danger" role="alert"> {{ message }} </li>
+                {% elif message.tags == 'success' %}
+                <li class="alert alert-success" role="alert"> {{ message }} </li>
+                {% else %}
+                <li class="alert alert-info" role="alert"> {{ message }} </li>
+                {% endif %}
+                {% endfor %}
+            </ul>
+            {% endif %}
+		</form>
+	</div>
+</body>
+</html>
+
+{% endblock %}
