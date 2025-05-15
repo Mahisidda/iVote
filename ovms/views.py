@@ -4,6 +4,7 @@ from .forms import AddVoter, EC_login_Form, AddEmployee1, AddEmployee2, AddCandi
 from django.contrib import messages
 from django.http import HttpResponse
 from .models import EC_login, Candidate, Voter, Party
+from django.views.decorators.cache import never_cache
 
 # from .models import voter
 
@@ -136,31 +137,65 @@ def VoteLoginView(request):
     return render(request, "Vote_Login.html", context)
 
 
+@never_cache
 def VoteView(request):
-    C_ID = request.session.get('id')
-    V_ID = request.session.get('vid')
+    voter_actual_id = request.session.get('id')  # This is the Voter_id
+
+    # Check 1: Is voter logged in (session 'id' exists)?
+    if not voter_actual_id:
+        messages.error(request, "Your session may have expired. Please log in again to vote.")
+        return redirect('Vote_Login')
+
+    # Check 2: Has this voter already voted?
+    # Global cursor 'c' is used here
+    c.execute("SELECT Has_Voted FROM ovms_voter WHERE Voter_id = %s;", [voter_actual_id])
+    voter_status_tuple = c.fetchone()
+
+    if not voter_status_tuple:
+        # This means the Voter_id from session is stale or invalid
+        messages.error(request, "Invalid voter session. Please log in again.")
+        # Optionally, clear the potentially stale session if desired
+        # request.session.pop('id', None)
+        # request.session.pop('vid', None)
+        return redirect('Vote_Login')
+
+    if voter_status_tuple[0] == 1:  # Has_Voted is 1
+        messages.info(request, "You have already cast your vote. Returning to the dashboard.")
+        return redirect('Home') # Redirect to the dashboard page
+
+    # If we reach here, voter is logged in and Has_Voted is 0.
+    # Proceed to get constituency ID and show voting form.
+
+    voter_constituency_id = request.session.get('vid')  # This is the Voter's ConstituencyID
+    # Check 3: Is constituency ID also in session? (should be, if 'id' is valid and voter hasn't voted)
+    if not voter_constituency_id:
+        messages.error(request, "Your session is missing constituency information. Please log in again.")
+        return redirect('Vote_Login')
+
     all_list = Candidate.objects.select_related('Party_id')
-    #party_list = Party.objects.values_list('Party_id', 'Party_name')
-    #all_list = cand_list.union(party_list)
     vote_form = Vote_form(request.POST or None)
     if vote_form.is_valid():
         cand_id = vote_form.cleaned_data['Choose_Candidate_ID']
         flag1 = 0
         for r in all_list:
-            if r.ConstituencyID_id == C_ID:
+            # Ensure candidate is in the voter's constituency
+            if r.ConstituencyID_id == voter_constituency_id:
                 if r.Candidate_id == cand_id:
                     flag1 = 1
                     c.execute(
                         "update ovms_candidate set No_of_votes = No_of_votes+1 where Candidate_id = %s", [cand_id])
+                    # Use voter_actual_id to update the voter's status
                     c.execute(
-                        "update ovms_voter set Has_Voted = 1 where Voter_id = %s", [V_ID])
+                        "update ovms_voter set Has_Voted = 1 where Voter_id = %s", [voter_actual_id])
+                    messages.success(request, "Your vote has been successfully cast!") # Added success message
                     return redirect('Vote_Login')
         if flag1 == 0:
-            messages.error(request, "Entered Candidate ID doesn't exist")
+            messages.error(request, "Entered Candidate ID doesn't exist in your constituency or is invalid.")
             return redirect('Vote')
     context = {
         "all_list": all_list,
-        "C_ID": C_ID,
+        "C_ID": voter_actual_id, 
+        "V_ID": voter_constituency_id, 
         "vote_form": vote_form
     }
     return render(request, "Vote.html", context)
@@ -168,32 +203,36 @@ def VoteView(request):
 
 def ResultsView(request):
     res_form = Result_form(request.POST or None)
-    all_list = Candidate.objects.select_related('Party_id')
-    cand_list = Candidate.objects.raw(
+    # Initial cand_list for GET request (shows all candidates or a default view)
+    cand_list_initial = Candidate.objects.raw(
         "select * from ovms_candidate order by No_of_votes DESC")
+
     if res_form.is_valid():
         C_ID = res_form.cleaned_data['Enter_Constituency_ID']
-        for r in all_list:
-            if r.ConstituencyID_id == C_ID:
-                cand_list = Candidate.objects.raw(
-                    'select Candidate_id,Candidate_name,Party_id_id,No_of_votes from ovms_candidate where ConstituencyID_id = %s order by No_of_votes DESC', [C_ID])
-                res_form = Result_form(request.POST or None)
-                context2 = {
-                    "cand_list": cand_list,
-                    "res_form": res_form
-                }
-                return render(request, "Results.html", context2)
-                if not cand_list:
-                    messages.error(request, "No results to display")
-                    return render(request, "EC_home.html", {})
-            else:
-                messages.error(request, "Entered Constituency ID doesn't exist")
-                return redirect('Results')
-    context = {
-        "all_list": all_list,
+        # Efficiently check if the constituency ID has any candidates
+        if Candidate.objects.filter(ConstituencyID_id=C_ID).exists():
+            cand_list_filtered = Candidate.objects.raw(
+                'select Candidate_id,Candidate_name,Party_id_id,No_of_votes from ovms_candidate where ConstituencyID_id = %s order by No_of_votes DESC', [C_ID])
+            
+            if not cand_list_filtered:
+                messages.error(request, f"No results to display for Constituency ID {C_ID}.")
+                return redirect('EC_home') 
+            
+            context_filtered = {
+                "cand_list": cand_list_filtered,
+                "res_form": res_form 
+            }
+            return render(request, "Results.html", context_filtered)
+        else:
+            messages.error(request, "Entered Constituency ID doesn't exist or has no candidates.")
+            return redirect('Results')
+    
+    # Context for initial GET request or if form is not valid
+    context_initial = {
+        "cand_list": cand_list_initial, # Use initial list here
         "res_form": res_form
     }
-    return render(request, "Results.html", context)
+    return render(request, "Results.html", context_initial)
 
 # def add(request):
 
